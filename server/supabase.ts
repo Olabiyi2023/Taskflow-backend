@@ -16,19 +16,53 @@ function isValidSupabaseUrl(url?: string): boolean {
   }
 }
 
+export function extractProjectRefFromKey(key?: string): string | null {
+  if (!key) return null;
+  try {
+    const parts = key.split('.');
+    if (parts.length >= 2) {
+      const decoded = Buffer.from(parts[1], 'base64').toString('utf-8');
+      const payload = JSON.parse(decoded);
+      if (payload && typeof payload.ref === 'string' && /^[a-z0-9_-]+$/i.test(payload.ref)) {
+        return payload.ref;
+      }
+    }
+  } catch {
+    // Ignore decoding failure
+  }
+  return null;
+}
+
+export function resolveSupabaseUrl(): string | null {
+  const explicitUrl = process.env.SUPABASE_URL?.trim();
+  if (isValidSupabaseUrl(explicitUrl)) {
+    return explicitUrl!;
+  }
+
+  // Gracefully resolve from JWT token ref if SUPABASE_URL is missing or corrupted/encrypted
+  const key = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+  )?.trim();
+  const ref = extractProjectRefFromKey(key);
+  if (ref) {
+    return `https://${ref}.supabase.co`;
+  }
+  return null;
+}
+
 export function getSupabaseClient(): SupabaseClient | null {
-  const supabaseUrl = process.env.SUPABASE_URL?.trim();
+  const supabaseUrl = resolveSupabaseUrl();
   const supabaseKey = (
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
   )?.trim();
 
-  if (!isValidSupabaseUrl(supabaseUrl) || !supabaseKey || supabaseKey.startsWith('your_') || supabaseKey.startsWith('MY_')) {
+  if (!supabaseUrl || !supabaseKey || supabaseKey.startsWith('your_') || supabaseKey.startsWith('MY_')) {
     return null;
   }
 
   if (!supabaseClient) {
     try {
-      supabaseClient = createClient(supabaseUrl!, supabaseKey, {
+      supabaseClient = createClient(supabaseUrl, supabaseKey, {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
@@ -44,11 +78,11 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 export function isSupabaseConfigured(): boolean {
-  const supabaseUrl = process.env.SUPABASE_URL?.trim();
+  const supabaseUrl = resolveSupabaseUrl();
   const supabaseKey = (
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
   )?.trim();
-  return isValidSupabaseUrl(supabaseUrl) && !!supabaseKey && !supabaseKey.startsWith('your_') && !supabaseKey.startsWith('MY_');
+  return !!supabaseUrl && !!supabaseKey && !supabaseKey.startsWith('your_') && !supabaseKey.startsWith('MY_');
 }
 
 export async function checkSupabaseHealth(): Promise<{
@@ -72,7 +106,7 @@ export async function checkSupabaseHealth(): Promise<{
     return {
       configured: true,
       connected: false,
-      url: process.env.SUPABASE_URL,
+      url: resolveSupabaseUrl() || process.env.SUPABASE_URL,
       message: 'Client initialization failed.',
     };
   }
@@ -105,7 +139,7 @@ export async function checkSupabaseHealth(): Promise<{
   return {
     configured: true,
     connected: anySuccess,
-    url: process.env.SUPABASE_URL,
+    url: resolveSupabaseUrl() || process.env.SUPABASE_URL,
     tablesStatus,
     message: anySuccess
       ? 'Successfully connected to Supabase.'
