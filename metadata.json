@@ -1,0 +1,6 @@
+{
+  "name": "TaskFlow Backend & Operations Hub",
+  "description": "TaskFlow backend service with Supabase integration, Resend and SendGrid email alerts for assignments and deadlines, task management, Paystack billing, and interactive API client.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
